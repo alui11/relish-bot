@@ -84,16 +84,17 @@ class Meal():
     self.price = price
 
 def order(driver, date, meal):
-  driver.get("https://www.getrelish.com/schedule/"+ date)
+  datestr = date.strftime("%Y-%m-%d")
+  driver.get("https://www.getrelish.com/schedule/"+ datestr)
   restaurant_cards = driver.find_elements(By.XPATH, f"//div[@data-role='meal-type-{meal}']/div[contains(@id, 'se-')]")
   if not len(restaurant_cards):
-    print("Found no restaurants on " + date + " for " + meal + ". This is unexpected.")
+    print("Found no restaurants on " + datestr + " for " + meal + ". This is unexpected.")
     return
   if element_exists(restaurant_cards[0], "//div[contains(@class, 'card-order-placed')]"):
-    print(meal.capitalize() + " for " + date + " already ordered. Skipping.")
+    print(meal.capitalize() + " for " + datestr + " already ordered. Skipping.")
     return
   if element_exists(driver, f"//div[@data-role='meal-type-{meal}']//div[contains(text(), 'Time')]"):
-    print("Too late to order " + meal + " for " + date + ". Skipping.")
+    print("Too late to order " + meal + " for " + datestr + ". Skipping.")
     return
 
   restaurants = []
@@ -105,7 +106,7 @@ def order(driver, date, meal):
       link = restaurant_card.find_element(By.TAG_NAME, "a").get_attribute("href")
       restaurants.append(Restaurant(name, link))
   if not len(restaurants):
-    print("No available restaurants for " + meal + " on " + date + ". It may be too late to order or they may be sold out.")
+    print("No available restaurants for " + meal + " on " + datestr + ". It may be too late to order or they may be sold out.")
     return
 
   meal_options = []
@@ -165,11 +166,10 @@ def main():
   for date in date_list:
     if date.weekday() in [5, 6]:
       continue
-    datestr = date.strftime("%Y-%m-%d")
     for meal in ["lunch", "dinner"]:
       print()
-      print("Ordering " + meal + " for " + datestr + "...")
-      order(driver, datestr, meal)
+      print(f"Ordering {meal} for {date.strftime('%A')} ({date.strftime('%m/%d')})...")
+      order(driver, date, meal)
 
 if __name__ == "__main__":
   main()
