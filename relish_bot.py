@@ -12,8 +12,6 @@ from selenium.webdriver.chrome.options import Options
 import sys
 import time
 
-emailll = input("Email: ")
-passwordd = getpass()
 
 def element_exists(parent, xpath):
   try:
@@ -22,6 +20,7 @@ def element_exists(parent, xpath):
       return False
   return True
 
+
 def click_when_available(driver, xpath):
   wait_start = time.perf_counter()
   while not element_exists(driver, xpath):
@@ -29,6 +28,7 @@ def click_when_available(driver, xpath):
       print("Error: Timed out while waiting for page to load. How's your internet connection?")
       sys.exit()
   driver.find_element(By.XPATH, xpath).click()
+
 
 def get_headless_options():
   options = Options()
@@ -41,14 +41,24 @@ def get_headless_options():
   options.add_argument("--disable-dev-shm-usage")
   return options
 
-def log_in(driver):
+
+def log_in(driver, email, password):
   driver.get("https://www.getrelish.com/schedule")
-  email = driver.find_element(By.ID, "identity_email")
-  password = driver.find_element(By.ID, "identity_password")
-  email.send_keys(emailll)
-  password.send_keys(passwordd)
+  email_box = driver.find_element(By.ID, "identity_email")
+  password_box = driver.find_element(By.ID, "identity_password")
+  email_box.send_keys(email)
+  password_box.send_keys(password)
   sign_in_button = driver.find_element(By.XPATH, "//input[@name='commit' and @value='Sign in']")
   sign_in_button.click()
+  
+  login_successful = False
+  try:
+    driver.find_element(By.XPATH, "//input[@name='commit' and @value='Sign in']")
+    print("Login failed. Wrong email or password. If this has happened >5 times your account might be locked.")
+  except:
+    login_successful = True
+  if not login_successful:
+    sys.exit()
 
   try:
     pop_up_button = driver.find_element(By.XPATH, "//button[@aria-label='Close modal' and @class='button' and @data-close]")
@@ -56,19 +66,30 @@ def log_in(driver):
   except NoSuchElementException:
     pass
 
+  print("Login successful.")
+
+
 def order(driver, date, meal):
   driver.get("https://www.getrelish.com/schedule/"+ date)
   restaurants = driver.find_elements(By.XPATH, f"//div[@data-role='meal-type-{meal}']/div[contains(@id, 'se-')]")
+  if not len(restaurants):
+    print("Found no restaurants on " + date + " for " + meal + ". This is unexpected.")
+    return
   if element_exists(restaurants[0], "//div[contains(@class, 'card-order-placed')]"):
-    print(meal.capitalize() + " for " + date + " already ordered. Aborting.")
+    print(meal.capitalize() + " for " + date + " already ordered. Skipping.")
     return
   if element_exists(driver, f"//div[@data-role='meal-type-{meal}']//div[contains(text(), 'Time')]"):
-    print("Too slow. You snooze you lose.")
+    print("Too late to order " + meal + " for " + date + ". Skipping.")
     return
+
   restaurant_links = []
   for restaurant in restaurants:
     if element_exists(restaurant, "//a"):
       restaurant_links.append(restaurant.find_element(By.TAG_NAME, "a").get_attribute("href"))
+  if not len(restaurant_links):
+    print("No available restaurants for " + meal + " on " + date + ". It may be too late to order or they may be sold out.")
+    return
+
   meal_options = []
   for link in restaurant_links:
     driver.get(link)
@@ -79,6 +100,10 @@ def order(driver, date, meal):
         item_name = item.find_element(By.XPATH, ".//div[@class='cell-header']").get_attribute("textContent")
         item_link = link #item.find_element(By.XPATH, ".//a").get_attribute("href")
         meal_options.append((item_name, item_link))
+  if not len(meal_options):
+    print("You have never ordered from any of the available restaurants. Skipping this meal.")
+    return
+
   for i, item in enumerate(meal_options):
     print(str(i+1) + ". " + item[0].strip().rstrip())
   choice = input("Choice [0 for nothing, anything for random]: ")
@@ -104,7 +129,11 @@ def order(driver, date, meal):
   click_when_available(driver, "//input[@name='commit' and contains(@value, 'Place Order')]")
   print("Success")
 
+
 def main():
+  email = input("Email: ")
+  password = getpass()
+
   print("Launching Chrome...")
   try:
     driver = webdriver.Chrome(options=get_headless_options())
@@ -112,9 +141,8 @@ def main():
     # TODO: instructions for installing chromedriver.
     print("Error: Could not connect to Chrome. You probably need to install chromedriver.")
     sys.exit()
-  print("Logging in " + emailll + " to getrelish.com...")
-  log_in(driver)
-  print("Login successful.")
+  print("Logging in " + email + " to getrelish.com...")
+  log_in(driver, email, password)
   today = datetime.datetime.today()
   date_list = [today + datetime.timedelta(days=x) for x in range(7)]
   for date in date_list:
@@ -122,6 +150,7 @@ def main():
       continue
     datestr = date.strftime("%Y-%m-%d")
     for meal in ["lunch", "dinner"]:
+      print()
       print("Ordering " + meal + " for " + datestr + "...")
       order(driver, datestr, meal)
 
