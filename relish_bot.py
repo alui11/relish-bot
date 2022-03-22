@@ -13,6 +13,9 @@ import sys
 import time
 
 
+def replace_last(input_str, old, new):
+  return new.join(input_str.rsplit(old, 1))
+
 def element_exists(parent, xpath):
   try:
       parent.find_element(By.XPATH, "." + xpath)
@@ -68,44 +71,59 @@ def log_in(driver, email, password):
 
   print("Login successful.")
 
+class Restaurant():
+  def __init__(self, name, link):
+    self.name = name
+    self.link = link
+
+class Meal():
+  def __init__(self, name, restaurant, price):
+    self.true_name = name
+    self.display_name = name.strip().rstrip()
+    self.restaurant = restaurant
+    self.price = price
 
 def order(driver, date, meal):
   driver.get("https://www.getrelish.com/schedule/"+ date)
-  restaurants = driver.find_elements(By.XPATH, f"//div[@data-role='meal-type-{meal}']/div[contains(@id, 'se-')]")
-  if not len(restaurants):
+  restaurant_cards = driver.find_elements(By.XPATH, f"//div[@data-role='meal-type-{meal}']/div[contains(@id, 'se-')]")
+  if not len(restaurant_cards):
     print("Found no restaurants on " + date + " for " + meal + ". This is unexpected.")
     return
-  if element_exists(restaurants[0], "//div[contains(@class, 'card-order-placed')]"):
+  if element_exists(restaurant_cards[0], "//div[contains(@class, 'card-order-placed')]"):
     print(meal.capitalize() + " for " + date + " already ordered. Skipping.")
     return
   if element_exists(driver, f"//div[@data-role='meal-type-{meal}']//div[contains(text(), 'Time')]"):
     print("Too late to order " + meal + " for " + date + ". Skipping.")
     return
 
-  restaurant_links = []
-  for restaurant in restaurants:
-    if element_exists(restaurant, "//a"):
-      restaurant_links.append(restaurant.find_element(By.TAG_NAME, "a").get_attribute("href"))
-  if not len(restaurant_links):
+  restaurants = []
+  for restaurant_card in restaurant_cards:
+    name_and_tag = restaurant_card.find_element(By.XPATH, ".//h2").text
+    tag_text = restaurant_card.find_element(By.XPATH, ".//h2/div").text
+    name = replace_last(name_and_tag, tag_text, "").strip()
+    if element_exists(restaurant_card, "//a"):
+      link = restaurant_card.find_element(By.TAG_NAME, "a").get_attribute("href")
+      restaurants.append(Restaurant(name, link))
+  if not len(restaurants):
     print("No available restaurants for " + meal + " on " + date + ". It may be too late to order or they may be sold out.")
     return
 
   meal_options = []
-  for link in restaurant_links:
-    driver.get(link)
+  for restaurant in restaurants:
+    driver.get(restaurant.link)
     first_menu_cell = driver.find_element(By.XPATH, "//div[@class='menu-items']/div[@class='grid-x menu-category-container']")
     if element_exists(first_menu_cell, "//div[@id='previously-ordered']"):
       prev_ordered_items = first_menu_cell.find_elements(By.XPATH, "./div[contains(@class, 'menu-item-items')]/div[@class='cell']")
       for item in prev_ordered_items:
         item_name = item.find_element(By.XPATH, ".//div[@class='cell-header']").get_attribute("textContent")
-        item_link = link #item.find_element(By.XPATH, ".//a").get_attribute("href")
-        meal_options.append((item_name, item_link))
+        item_price = float(item.find_element(By.XPATH, ".//span[@class='menu-item-price']").get_attribute("innerText")[1:])
+        meal_options.append(Meal(item_name, restaurant, item_price))
   if not len(meal_options):
     print("You have never ordered from any of the available restaurants. Skipping this meal.")
     return
 
-  for i, item in enumerate(meal_options):
-    print(str(i+1) + ". " + item[0].strip().rstrip())
+  for i, meal in enumerate(meal_options):
+    print(f"{i+1}. {meal.display_name} ({meal.restaurant.name}) ${meal.price:.2f}")
   choice = input("Choice [0 for nothing, anything for random]: ")
   try:
     choice = int(choice)
@@ -118,12 +136,11 @@ def order(driver, date, meal):
       chosen_meal = random.choice(meal_options)
   except ValueError:
     chosen_meal = random.choice(meal_options)
-  print("Chose " + chosen_meal[0].strip().rstrip())
-  driver.get(chosen_meal[1])
+  print("Chose " + chosen_meal.display_name)
+  driver.get(chosen_meal.restaurant.link)
   first_menu_cell = driver.find_element(By.XPATH, "//div[@class='menu-items']/div[@class='grid-x menu-category-container']")
-  chosen_meal_cell = first_menu_cell.find_element(By.XPATH, f"./div[contains(@class, 'menu-item-items')]/div[.//div[contains(text(), '{chosen_meal[0]}')]]")
+  chosen_meal_cell = first_menu_cell.find_element(By.XPATH, f"./div[contains(@class, 'menu-item-items')]/div[.//div[contains(text(), '{chosen_meal.true_name}')]]")
   chosen_meal_cell.find_element(By.XPATH, ".//a").click()
-  #click_when_available(driver, f"//div[@class='menu-items']/div[@class='grid-x menu-category-container']/div[contains(@class, 'menu-item-items')]/div[.//div[contains(text(), '{chosen_meal[0]}')]]//a")
   click_when_available(driver, "//form[@id='new_order_item']//input[@name='commit' and @value='Add to cart']")
   click_when_available(driver, "//a[text()='Proceed to Checkout']")
   click_when_available(driver, "//input[@name='commit' and contains(@value, 'Place Order')]")
@@ -144,7 +161,7 @@ def main():
   print("Logging in " + email + " to getrelish.com...")
   log_in(driver, email, password)
   today = datetime.datetime.today()
-  date_list = [today + datetime.timedelta(days=x) for x in range(7)]
+  date_list = [today + datetime.timedelta(days=x) for x in range(2)]
   for date in date_list:
     if date.weekday() in [5, 6]:
       continue
